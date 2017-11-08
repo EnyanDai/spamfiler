@@ -1,8 +1,6 @@
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Iterator;
-import java.util.Random;
-import java.util.Set;
 
 /**
  * @author Jessa Bekker
@@ -133,7 +131,7 @@ public class NaiveBayesCountMinSketch extends OnlineTextClassifier{
         this.threshold = threshold;
         /* FILL IN HERE */
         //initial for multi-threads of update
-        this.tasks = 0;
+        this.tasks = -1;
         updateflag=false;
         this.updatelock=new Object();
         this.labeledText=null;

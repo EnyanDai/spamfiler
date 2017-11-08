@@ -88,6 +88,7 @@ public class PerceptronFeatureHashing extends OnlineTextClassifier{
         	int idex=hash(str);
         	this.weights[idex] += this.learningRate*(y-pred);
         }
+        this.bias +=this.learningRate*(y-pred);
         /* FILL IN HERE */
 
     }
@@ -143,7 +144,7 @@ public class PerceptronFeatureHashing extends OnlineTextClassifier{
             PerceptronFeatureHashing perceptron = new PerceptronFeatureHashing(logNbOfBuckets, learningRate);
 
             // generate output for the learning curve
-            EvaluationMetric[] evaluationMetrics = new EvaluationMetric[]{new Accuracy()}; //ADD AT LEAST TWO MORE EVALUATION METRICS
+            EvaluationMetric[] evaluationMetrics = new EvaluationMetric[]{new Accuracy(),new Precision(),new Recall(),new F1_score()}; //ADD AT LEAST TWO MORE EVALUATION METRICS
             perceptron.makeLearningCurve(stream, evaluationMetrics, out+".pfh", reportingPeriod, writeOutAllPredictions);
 
         } catch (FileNotFoundException e) {

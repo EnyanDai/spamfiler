@@ -148,7 +148,7 @@ public class NaiveBayesFeatureHashing extends OnlineTextClassifier{
             NaiveBayesFeatureHashing nb = new NaiveBayesFeatureHashing(logNbOfBuckets, threshold);
 
             // generate output for the learning curve
-            EvaluationMetric[] evaluationMetrics = new EvaluationMetric[]{new Accuracy()}; //ADD AT LEAST TWO MORE EVALUATION METRICS
+            EvaluationMetric[] evaluationMetrics = new EvaluationMetric[]{new Accuracy(),new Precision(),new Recall(),new F1_score()}; //ADD AT LEAST TWO MORE EVALUATION METRICS
             nb.makeLearningCurve(stream, evaluationMetrics, out+".nbfh", reportingPeriod, writeOutAllPredictions);
 
         } catch (FileNotFoundException e) {
