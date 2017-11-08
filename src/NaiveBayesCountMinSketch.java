@@ -1,5 +1,6 @@
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.Iterator;
 import java.util.Random;
 import java.util.Set;
 
@@ -21,19 +22,28 @@ public class NaiveBayesCountMinSketch extends OnlineTextClassifier{
     /* FILL IN HERE */
     private int[] seeds;
     private int tasks;
+    private boolean updateflag;
     private LabeledText labeledText;
+    private Object updatelock;
+    
+    private Iterator<String> ite;
+    private ParsedText parsedText;
+    private Object predictionlock;
+    private boolean predflag;
+    double logHam = 0;
+    double logSpam =0;
     
     private class updateThread extends Thread{
     	public void run(){
     		while(true)
     		{
     			int k=0;
-    			synchronized(NaiveBayesCountMinSketch.this){
+    			synchronized(NaiveBayesCountMinSketch.this.updatelock){
     				
     				while( (NaiveBayesCountMinSketch.this.tasks < 0) || (NaiveBayesCountMinSketch.this.labeledText==null) )
     				{
     					try {
-    						NaiveBayesCountMinSketch.this.wait();
+    						NaiveBayesCountMinSketch.this.updatelock.wait();
 						} catch (InterruptedException e) {
 							// TODO Auto-generated catch block
 							e.printStackTrace();
@@ -51,15 +61,60 @@ public class NaiveBayesCountMinSketch extends OnlineTextClassifier{
     	        	counts[labeledText.label][k][hash(str,k)]++;
     	        }
     			if(k==0){
-    				synchronized(NaiveBayesCountMinSketch.this){
-    					NaiveBayesCountMinSketch.this.notifyAll();
+    				synchronized(NaiveBayesCountMinSketch.this.updatelock){
+    					updateflag=false;
+    					NaiveBayesCountMinSketch.this.updatelock.notifyAll();
     				}
     			}
     			
     		}//end while
     	}
     };
+    private class makepredictionThread extends Thread{
+    	
+    	public void run(){
+    		while(true){
+    			String str="";
+    			boolean hasNext=true;
+    			synchronized(NaiveBayesCountMinSketch.this.predictionlock){
+    				while(ite==null || !NaiveBayesCountMinSketch.this.ite.hasNext()){
+    					try {
+							NaiveBayesCountMinSketch.this.predictionlock.wait();
+						} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+    				}
+    				str=ite.next();
+    				hasNext=ite.hasNext();
+    			}
+    			
+    			int HamCount=NaiveBayesCountMinSketch.this.counts[0][0][NaiveBayesCountMinSketch.this.hash(str,0)];
+    			int SpamCount=counts[1][0][hash(str,0)];
+            	
+    			for(int i=1;i<NaiveBayesCountMinSketch.this.nbOfHashes;i++){
+    				int idex=hash(str,i);
+    				int tmpHamCount=NaiveBayesCountMinSketch.this.counts[0][i][idex];
+   					HamCount=HamCount<tmpHamCount?HamCount:tmpHamCount;
+   					int tmpSpamCount=NaiveBayesCountMinSketch.this.counts[1][i][idex];
+   					SpamCount=SpamCount<tmpSpamCount?SpamCount:tmpSpamCount;
+   				}//find the min count O(h)
+   				double Ham = Math.log( HamCount ) - Math.log( (classCounts[0] + 2.0 ) );
+   				double Spam = Math.log( SpamCount ) - Math.log( (classCounts[1] + 2.0 ) );
+   				synchronized(NaiveBayesCountMinSketch.this.predictionlock){
+   					logHam += Ham;
+   					logSpam += Spam;
+   					if(!hasNext){
+   						predflag=false;
+   						predictionlock.notifyAll();
+   					}
+   				}
+   			
+    		}
+    	}
+    }
     updateThread[] updatethreads;
+    makepredictionThread[] predthreads;
     /**
      * Initialize the naive Bayes classifier
      *
@@ -76,13 +131,28 @@ public class NaiveBayesCountMinSketch extends OnlineTextClassifier{
         this.nbOfHashes = nbOfHashes;
         this.logNbOfBuckets=logNbOfBuckets;
         this.threshold = threshold;
+        /* FILL IN HERE */
+        //initial for multi-threads of update
         this.tasks = 0;
+        updateflag=false;
+        this.updatelock=new Object();
         this.labeledText=null;
         this.updatethreads = new updateThread[8];
         for(int i=0;i<updatethreads.length;i++){
         	this.updatethreads[i]=new updateThread();
         	this.updatethreads[i].setDaemon(true);
         	this.updatethreads[i].start();
+        }
+        
+        this.predictionlock=new Object();
+        this.parsedText=null;
+        this.ite=null;
+        predflag=false;
+        this.predthreads =new makepredictionThread[8];
+        for(int i=0;i<predthreads.length;i++){
+        	this.predthreads[i]=new makepredictionThread();
+        	this.predthreads[i].setDaemon(true);
+        	this.predthreads[i].start();
         }
         
         int size=1<<logNbOfBuckets;
@@ -95,7 +165,7 @@ public class NaiveBayesCountMinSketch extends OnlineTextClassifier{
         	}
         }
         classCounts=new int[]{0,0};
-        
+        //initial the seed
         seeds=new int[nbOfHashes];
         for(int i=0;i<seeds.length;i++){
         	seeds[i]=i;
@@ -118,14 +188,14 @@ public class NaiveBayesCountMinSketch extends OnlineTextClassifier{
      */
     private int hash(String str, int h){
         int v=0;
+        /* FILL IN HERE */
         int size = 0;
         int key = 0;
         size=1<<this.logNbOfBuckets;
         size--;
         key = MurmurHash.hash32(str, seeds[h]);
         v = key & size;
-        /* FILL IN HERE */
-
+  
         return v;
     }
 
@@ -139,6 +209,7 @@ public class NaiveBayesCountMinSketch extends OnlineTextClassifier{
     @Override
     public void update(LabeledText labeledText){
         super.update(labeledText);
+        /* FILL IN HERE */
         this.classCounts[labeledText.label]++;
         
         /*for(String str:labeledText.text.ngrams){
@@ -146,21 +217,22 @@ public class NaiveBayesCountMinSketch extends OnlineTextClassifier{
         		counts[labeledText.label][i][hash(str,i)]++;
         	}
         }*/
-        synchronized(this){
-        	this.labeledText=labeledText;
+        this.labeledText=labeledText;
+        synchronized(this.updatelock){
+        	
         	this.tasks = this.nbOfHashes-1;
-        	this.notifyAll();
-        	while(this.tasks > 0 ){
+        	this.updateflag=true;
+        	this.updatelock.notifyAll();
+        	while(updateflag){
         		try {
-            		this.wait();
+            		this.updatelock.wait();
             	} catch (InterruptedException e) {
     			// TODO Auto-generated catch block
     			e.printStackTrace();
             	}
         	}
+        	this.updateflag=false;
         }
-        /* FILL IN HERE */
-
     }
 
 
@@ -177,9 +249,8 @@ public class NaiveBayesCountMinSketch extends OnlineTextClassifier{
     @Override
     public double makePrediction(ParsedText text) {
         double pr = 0.0;
-
         /* FILL IN HERE */
-        double logHam = 0;
+        /*double logHam = 0;
         double logSpam =0;
         
         for(String str:text.ngrams){
@@ -196,13 +267,37 @@ public class NaiveBayesCountMinSketch extends OnlineTextClassifier{
         	
         	logHam += Math.log( HamCount ) - Math.log( (this.classCounts[0] + 2.0 ) );
         	logSpam += Math.log( SpamCount ) - Math.log( (this.classCounts[1] + 2.0 ) );
+        }*/
+        logHam=0;
+        logSpam=0;
+        synchronized(this.predictionlock){
+        	this.parsedText = text;
+        	this.ite=this.parsedText.ngrams.iterator();
+        	
+        	if(ite.hasNext())
+        		predflag=true;
+        	else predflag=false;
+        	//make sure we have tasks need to wait
+        	
+        	this.predictionlock.notifyAll();
+        	while(predflag){
+        		try {
+					this.predictionlock.wait();
+				} catch (InterruptedException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+        	}
+        	this.predflag=false;
+        	ite=null;
         }
         logHam += Math.log(this.classCounts[0]) - Math.log(this.nbExamplesProcessed);
         logSpam += Math.log(this.classCounts[1]) - Math.log(this.nbExamplesProcessed);
         //finish log 
         double logAll = 0;
-        logAll -= Math.log(1.0+Math.exp(logHam-logSpam));
-        pr = Math.exp(logAll);
+        //logAll -= Math.log(1.0+Math.exp(logHam-logSpam));
+        //pr = Math.exp(logAll);
+        pr=1.0/(1.0+Math.exp(logHam-logSpam));
         return pr;
     }
 
@@ -234,7 +329,7 @@ public class NaiveBayesCountMinSketch extends OnlineTextClassifier{
             NaiveBayesCountMinSketch nb = new NaiveBayesCountMinSketch(nbOfHashes ,logNbOfBuckets, threshold);
 
             // generate output for the learning curve
-            EvaluationMetric[] evaluationMetrics = new EvaluationMetric[]{new Accuracy()}; //ADD AT LEAST TWO MORE EVALUATION METRICS
+            EvaluationMetric[] evaluationMetrics = new EvaluationMetric[]{new Accuracy(),new Precision(),new Recall(),new F1_score()}; //ADD AT LEAST TWO MORE EVALUATION METRICS
             long begintime = System.currentTimeMillis();
             nb.makeLearningCurve(stream, evaluationMetrics, out+".nbcms", reportingPeriod, writeOutAllPredictions);
             long endtime = System.currentTimeMillis();
